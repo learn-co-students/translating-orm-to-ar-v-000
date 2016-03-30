@@ -1,78 +1,69 @@
-require "spec_helper"
-require "pry"
+require_relative "../config/environment.rb"
+require 'active_support/inflector'
 
-describe "Dog" do
+require 'pry'
 
-  let(:teddy) {Dog.new(name: "Teddy", breed: "cockapoo")}
-
-  before do
-    DB.execute("DROP TABLE IF EXISTS dogs")
-    @sql_runner = SQLRunner.new(DB)
-    @sql_runner.execute_schema_migration_sql
+class InteractiveRecord
+  
+  def self.table_name
+    self.to_s.downcase.pluralize
   end
-
-  describe "inheritence" do
-    it 'inherits from ActiveRecord::Base' do
-      expect(Dog.superclass).to eq(ActiveRecord::Base)
+  
+  def self.column_names
+    DB[:conn].results_as_hash = true;
+    
+    sql = "pragma table_info('#{table_name}')"
+    
+    table_info = DB[:conn].execute(sql)
+    column_names = []
+    table_info.each do |row|
+      column_names << row["name"]
+    end
+    column_names.compact
+  end
+  
+  self.column_names.each do |col_name|
+    attr_accessor col_name.to_sym
+  end
+  
+  def initialize(options={})
+    options.each do |prop, value|
+      self.send("#{prop}=", value)
     end
   end
-
-  describe "attributes" do
-    it 'has a name and a breed' do
-      dog = Dog.new({name: "Fido", breed: "lab"})
-      expect(dog.name).to eq("Fido")
-      expect(dog.breed).to eq("lab")
-    end
+  
+  def table_name_for_insert
+    self.class.table_name
   end
-
-  describe '.create' do
-    it 'takes in a hash of attributes and uses metaprogramming to create a new dog object. Then it uses the #save method to save that dog to the database' do
-      dog = Dog.create(name: "Ralph", breed: "lab")
-      expect(dog.name).to eq("Ralph")
-    end
+  
+  def col_names_for_insert
+    self.class.column_names.delete_if {|col| col=="id"}.join(", ")
   end
-
-  describe '.save' do
-    it 'saves an instance of the dog class to the database and then sets the given dogs `id` attribute' do
-      dog = Dog.new({name: "Fido", breed: "lab"})
-      dog.save
-      expect(dog.id).to eq(1)
+  
+  def values_for_insert
+    values = []
+    self.class.column_names.each do |col|
+      values << "'#{send(col)}'" unless send(col).nil?
     end
+    values.join(", ")
   end
-
-  describe '.update' do
-    it 'updates the record associated with a given instance' do
-      teddy.save
-      teddy.update({name: "Teddy Jr."})
-      teddy_jr = Dog.find_by_name("Teddy Jr.")
-      expect(teddy_jr.id).to eq(teddy.id)
-    end
+  
+  def save
+    sql = "INSERT INTO #{table_name_for_insert} (#{col_names_for_insert}) VALUES (#{values_for_insert})"
+    DB[:conn].execute(sql)
+    @id = DB[:conn].execute("SELECT last_insert_rowid() FROM #{table_name_for_insert}")[0][0]
   end
-
-  describe '.find_or_create_by' do
-    it 'creates a dog if it does not already exist' do
-      dog1 = Dog.create(name: 'Teddy', breed: 'cockapoo')
-      dog2 = Dog.find_or_create_by(name: 'Teddy', breed: 'cockapoo')
-      expect(dog1.id).to eq(dog2.id)
-    end
+  
+  def self.find_by_name(name)
+    sql = "SELECT * FROM #{self.table_name} WHERE name = '#{name}'"
+    DB[:conn].execute(sql)
   end
-
-  describe '.find_by_name' do
-    it 'returns a dog that matches the name from the DB' do
-      teddy.save
-      teddy_from_db = Dog.find_by_name("Teddy")
-      expect(teddy_from_db.name).to eq("Teddy")
-      expect(teddy_from_db).to be_an_instance_of(Dog)
-    end
+  
+  def self.find_by(hash)
+    value = hash.values[0]
+    value = "'#{value}'" if !(value.to_i == value) 
+    sql = "SELECT * FROM #{self.table_name} WHERE #{hash.keys[0]} = #{value}"
+    DB[:conn].execute(sql)
   end
-
-  describe '.find_by_id' do
-    it 'returns a dog that matches the name from the DB' do
-      teddy.save
-      teddy_from_db = Dog.find_by_id(1)
-      expect(teddy_from_db.id).to eq(1)
-      expect(teddy_from_db).to be_an_instance_of(Dog)
-    end
-  end
-
+  
 end
