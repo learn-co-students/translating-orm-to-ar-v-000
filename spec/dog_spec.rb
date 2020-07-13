@@ -11,7 +11,7 @@ describe "Dog" do
     @sql_runner.execute_schema_migration_sql
   end
 
-  describe "inheritence" do
+  describe "inheritance" do
     it 'inherits from ActiveRecord::Base' do
       expect(Dog.superclass).to eq(ActiveRecord::Base)
     end
