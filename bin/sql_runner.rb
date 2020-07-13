@@ -9,6 +9,7 @@ class SQLRunner
   end
 
   def execute_sql(sql)
+    binding.pry
      sql.scan(/[^;]*;/m).each { |line| @db.execute(line) } unless sql.empty?
   end
 end
